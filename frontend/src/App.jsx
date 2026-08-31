@@ -10,6 +10,11 @@ function getConversationId(userA, userB) {
   return [userA, userB].sort().join('_');
 }
 
+function formatTime(dateString) {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function App() {
   const [username, setUsername] = useState(localStorage.getItem('username') || null);
   const [socket, setSocket] = useState(null);
@@ -17,6 +22,8 @@ function App() {
   const [activeChatUser, setActiveChatUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [unreadUsers, setUnreadUsers] = useState(new Set());
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
 
   useEffect(() => {
     if (!username) return;
@@ -44,9 +51,54 @@ function App() {
     return () => socket.off('chat message', handler);
   }, [socket]);
 
+  useEffect(() => {
+    if (!socket) return;
+
+    const onlineHandler = (usersList) => {
+      setOnlineUsers(new Set(usersList));
+    };
+
+    socket.on('online users', onlineHandler);
+    return () => socket.off('online users', onlineHandler);
+  }, [socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const seenHandler = ({ conversationId }) => {
+      const activeId = activeChatUser ? getConversationId(username, activeChatUser) : null;
+      if (conversationId === activeId) {
+        setMessages((prev) => prev.map((m) => (m.sender === username ? { ...m, seen: true } : m)));
+      }
+    };
+
+    socket.on('messages seen', seenHandler);
+    return () => socket.off('messages seen', seenHandler);
+  }, [socket, activeChatUser, username]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const notifHandler = ({ conversationId, sender }) => {
+      const activeId = activeChatUser ? getConversationId(username, activeChatUser) : null;
+      if (conversationId !== activeId) {
+        setUnreadUsers((prev) => new Set(prev).add(sender));
+      }
+    };
+
+    socket.on('new message notification', notifHandler);
+    return () => socket.off('new message notification', notifHandler);
+  }, [socket, activeChatUser, username]);
+
   const handleSelectUser = (otherUser) => {
     setActiveChatUser(otherUser);
     setMessages([]);
+
+    setUnreadUsers((prev) => {
+      const updated = new Set(prev);
+      updated.delete(otherUser);
+      return updated;
+    });
 
     const conversationId = getConversationId(username, otherUser);
 
@@ -66,7 +118,11 @@ function App() {
     if (input.trim() === '' || !activeChatUser || !socket) return;
 
     const conversationId = getConversationId(username, activeChatUser);
-    socket.emit('chat message', { text: input, conversationId });
+    socket.emit('chat message', {
+      text: input,
+      conversationId,
+      recipient: activeChatUser,
+    });
     setInput('');
   };
 
@@ -84,14 +140,21 @@ function App() {
 
   return (
     <div className="app-layout">
-      <UserList onSelectUser={handleSelectUser} />
+      <UserList
+        onSelectUser={handleSelectUser}
+        activeChatUser={activeChatUser}
+        unreadUsers={unreadUsers}
+        onlineUsers={onlineUsers}
+      />
 
       <div className="app-shell">
         <div className="chat-header">
           <div>
             <h1>{activeChatUser || 'Chatter'}</h1>
             <p className={`status-line ${!isConnected ? 'offline' : ''}`}>
-              {isConnected ? '● Connected' : '● Disconnected'}
+              {activeChatUser
+                ? (onlineUsers.has(activeChatUser) ? '● Online' : '○ Offline')
+                : (isConnected ? '● Connected' : '● Disconnected')}
             </p>
           </div>
           <div className="user-block">
@@ -109,6 +172,14 @@ function App() {
                 <div key={msg._id} className={`bubble-row ${msg.sender === username ? 'mine' : 'theirs'}`}>
                   {msg.sender !== username && <span className="sender-label">{msg.sender}</span>}
                   <div className="bubble">{msg.text}</div>
+                  <span className="msg-time">
+                    {formatTime(msg.createdAt)}
+                    {msg.sender === username && (
+                      <span className={`seen-mark ${msg.seen ? 'seen' : ''}`}>
+                        {msg.seen ? ' ✓✓ Seen' : ' ✓ Sent'}
+                      </span>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>

@@ -12,19 +12,22 @@
   box-sizing: border-box;
 }
 
-body {
+html, body, #root {
+  height: 100%;
   margin: 0;
+  padding: 0;
+}
+
+body {
   background: var(--bg);
   color: var(--ink);
   font-family: 'Inter', sans-serif;
 }
 
-.app-shell {
-  max-width: 640px;
-  margin: 0 auto;
-  height: 100vh;
+.app-layout {
   display: flex;
-  flex-direction: column;
+  height: 100vh;
+  width: 100%;
 }
 
 /* ---- Header ---- */
@@ -75,6 +78,15 @@ body {
   color: var(--accent);
 }
 
+/* ---- App shell (chat pane) ---- */
+.app-shell {
+  flex: 1;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 /* ---- Messages ---- */
 .messages-area {
   flex: 1;
@@ -86,6 +98,7 @@ body {
 }
 
 .bubble-row {
+  position: relative;
   display: flex;
   flex-direction: column;
   max-width: 75%;
@@ -124,6 +137,16 @@ body {
   background: var(--bubble-other);
   border: 1px solid var(--line);
   border-radius: 16px 16px 16px 4px;
+}
+
+/* ---- Message timestamps ---- */
+.msg-time {
+  font-size: 0.65rem;
+  color: #B8ABB1;
+  margin-top: 2px;
+  padding: 0 6px;
+  display: block;
+  line-height: 1;
 }
 
 /* ---- Input ---- */
@@ -233,17 +256,11 @@ body {
 }
 
 /* ---- User list ---- */
-.app-layout {
-  display: flex;
-  height: 100vh;
-  max-width: 900px;
-  margin: 0 auto;
-}
-
 .user-list {
   width: 220px;
   border-right: 1px solid var(--line);
   padding: 20px 16px;
+  overflow-y: auto;
 }
 
 .user-list h3 {
@@ -252,6 +269,9 @@ body {
 }
 
 .user-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 10px 12px;
   border-radius: 10px;
   cursor: pointer;
@@ -260,6 +280,19 @@ body {
 
 .user-list-item:hover {
   background: var(--accent-soft);
+}
+
+.user-list-item.active {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.unread-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
 }
 
 .empty-state {
@@ -275,4 +308,32 @@ body {
   color: #8A7D85;
   font-family: 'Fraunces', serif;
   font-size: 1.2rem;
+}
+
+/* ---- Online status ---- */
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 0.9rem;
+}
+
+.online-label {
+  font-size: 0.7rem;
+  color: #B8ABB1;
+}
+
+.online-label.online {
+  color: var(--sage);
+}
+
+/* ---- Seen/sent marks ---- */
+.seen-mark {
+  color: #B8ABB1;
+}
+
+.seen-mark.seen {
+  color: var(--sage);
 }

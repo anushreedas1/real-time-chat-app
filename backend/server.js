@@ -63,13 +63,83 @@ io.use((socket, next) => {
 });
 
 // Listen for new client connections
+// Tracks which usernames are currently connected (a user can have multiple tabs/sockets open)
+const onlineUsers = new Map(); // username -> count of active connections
+
+function broadcastOnlineUsers() {
+  io.emit('online users', Array.from(onlineUsers.keys()));
+}
+
+io.on('connection', (socket) => {
+  const { username } = socket.user;
+  console.log('A user connected:', username);
+
+  socket.join(username);
+
+  // Mark this user online
+  onlineUsers.set(username, (onlineUsers.get(username) || 0) + 1);
+  broadcastOnlineUsers();
+
+  socket.on('join conversation', async (conversationId) => {
+    socket.join(conversationId);
+
+    // Mark the OTHER person's messages in this conversation as seen
+    try {
+      await Message.updateMany(
+        { conversationId, sender: { $ne: username }, seen: false },
+        { $set: { seen: true } }
+      );
+      // Tell everyone in this conversation that messages were seen
+      io.to(conversationId).emit('messages seen', { conversationId, seenBy: username });
+    } catch (err) {
+      console.error('Error marking messages seen:', err);
+    }
+  });
+
+  socket.on('chat message', async (data) => {
+    try {
+      const newMessage = new Message({
+        text: data.text,
+        sender: username,
+        conversationId: data.conversationId,
+      });
+      await newMessage.save();
+
+      io.to(data.conversationId).emit('chat message', newMessage);
+
+      if (data.recipient) {
+        io.to(data.recipient).emit('new message notification', {
+          conversationId: data.conversationId,
+          sender: username,
+        });
+      }
+    } catch (err) {
+      console.error('Error saving message:', err);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', username);
+
+    const count = onlineUsers.get(username) || 0;
+    if (count <= 1) {
+      onlineUsers.delete(username);
+    } else {
+      onlineUsers.set(username, count - 1);
+    }
+    broadcastOnlineUsers();
+  });
+});
+
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.user.username);
 
-  // Client asks to join a specific conversation
+  // Join a personal room named after this user — lets us notify them
+  // about new messages even in conversations they don't currently have open
+  socket.join(socket.user.username);
+
   socket.on('join conversation', (conversationId) => {
     socket.join(conversationId);
-    console.log(`${socket.user.username} joined conversation ${conversationId}`);
   });
 
   socket.on('chat message', async (data) => {
@@ -81,8 +151,16 @@ io.on('connection', (socket) => {
       });
       await newMessage.save();
 
-      // Only send to people in this specific conversation room
       io.to(data.conversationId).emit('chat message', newMessage);
+
+      // Notify the recipient's personal room, so their sidebar can show an unread dot
+      // even if they don't have this conversation open right now
+      if (data.recipient) {
+        io.to(data.recipient).emit('new message notification', {
+          conversationId: data.conversationId,
+          sender: socket.user.username,
+        });
+      }
     } catch (err) {
       console.error('Error saving message:', err);
     }
