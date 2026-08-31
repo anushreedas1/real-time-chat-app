@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function Auth({ onLogin }) {
   const [isSignup, setIsSignup] = useState(false);
   const [username, setUsername] = useState('');
@@ -13,7 +15,7 @@ function Auth({ onLogin }) {
     const endpoint = isSignup ? 'signup' : 'login';
 
     try {
-      const res = await fetch(`http://localhost:5000/api/auth/${endpoint}`, {
+      const res = await fetch(`${API_URL}/api/auth/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -26,7 +28,6 @@ function Auth({ onLogin }) {
         return;
       }
 
-      // Save token + username, and tell the parent component we're logged in
       localStorage.setItem('token', data.token);
       localStorage.setItem('username', data.username);
       onLogin(data.username);

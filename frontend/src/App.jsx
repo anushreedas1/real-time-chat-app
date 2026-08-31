@@ -4,6 +4,8 @@ import Auth from './components/Auth';
 import UserList from './components/UserList';
 import './App.css';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function getConversationId(userA, userB) {
   return [userA, userB].sort().join('_');
 }
@@ -16,11 +18,10 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
 
-  // Create the socket connection once we know we're logged in
   useEffect(() => {
     if (!username) return;
 
-    const newSocket = io('http://localhost:5000', {
+    const newSocket = io(API_URL, {
       auth: { token: localStorage.getItem('token') },
     });
 
@@ -32,7 +33,6 @@ function App() {
     return () => newSocket.disconnect();
   }, [username]);
 
-  // Listen for incoming messages
   useEffect(() => {
     if (!socket) return;
 
@@ -44,7 +44,6 @@ function App() {
     return () => socket.off('chat message', handler);
   }, [socket]);
 
-  // When a chat partner is selected, join that conversation room and load history
   const handleSelectUser = (otherUser) => {
     setActiveChatUser(otherUser);
     setMessages([]);
@@ -55,7 +54,7 @@ function App() {
       socket.emit('join conversation', conversationId);
     }
 
-    fetch(`http://localhost:5000/messages/${conversationId}`, {
+    fetch(`${API_URL}/messages/${conversationId}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
     })
       .then((res) => res.json())

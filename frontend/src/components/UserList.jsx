@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function UserList({ onSelectUser }) {
   const [users, setUsers] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/users', {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem('token')}`,
-      },
+  fetch(`${API_URL}/api/users`, {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+    },
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error('Failed to fetch users');
+      return res.json();
     })
-      .then((res) => res.json())
-      .then((data) => setUsers(data))
-      .catch((err) => console.error('Error fetching users:', err));
-  }, []);
+    .then((data) => setUsers(Array.isArray(data) ? data : []))
+    .catch((err) => {
+      console.error('Error fetching users:', err);
+      setUsers([]);
+    });
+}, []);
 
   return (
     <div className="user-list">
