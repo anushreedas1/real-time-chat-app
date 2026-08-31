@@ -1,0 +1,278 @@
+:root {
+  --ink: #2B2130;
+  --bg: #FBF7F5;
+  --accent: #C1435A;
+  --accent-soft: #F2D9DE;
+  --sage: #6B8F71;
+  --line: #E8DFDD;
+  --bubble-other: #FFFFFF;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+}
+
+.app-shell {
+  max-width: 640px;
+  margin: 0 auto;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Header ---- */
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chat-header h1 {
+  font-family: 'Fraunces', serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.status-line {
+  font-size: 0.8rem;
+  color: var(--sage);
+  margin-top: 2px;
+}
+
+.status-line.offline {
+  color: #B5555E;
+}
+
+.user-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.logout-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.logout-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---- Messages ---- */
+.messages-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bubble-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 75%;
+}
+
+.bubble-row.mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.bubble-row.theirs {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.sender-label {
+  font-size: 0.72rem;
+  color: #8A7D85;
+  margin-bottom: 3px;
+  padding: 0 4px;
+}
+
+.bubble {
+  padding: 10px 14px;
+  line-height: 1.4;
+  font-size: 0.95rem;
+}
+
+.bubble-row.mine .bubble {
+  background: var(--accent);
+  color: white;
+  border-radius: 16px 16px 4px 16px;
+}
+
+.bubble-row.theirs .bubble {
+  background: var(--bubble-other);
+  border: 1px solid var(--line);
+  border-radius: 16px 16px 16px 4px;
+}
+
+/* ---- Input ---- */
+.input-row {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px 24px;
+  border-top: 1px solid var(--line);
+}
+
+.input-row input {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.input-row input:focus {
+  border-color: var(--accent);
+}
+
+.send-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 24px;
+  padding: 12px 22px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.send-btn:hover {
+  background: #A83A4E;
+}
+
+/* ---- Auth screen ---- */
+.auth-shell {
+  max-width: 340px;
+  margin: 12vh auto;
+  padding: 0 20px;
+  text-align: center;
+}
+
+.auth-shell h1 {
+  font-family: 'Fraunces', serif;
+  font-size: 2rem;
+  margin-bottom: 4px;
+}
+
+.auth-shell p.tagline {
+  color: #8A7D85;
+  margin-bottom: 28px;
+  font-size: 0.9rem;
+}
+
+.auth-shell form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-shell input {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.auth-shell input:focus {
+  border-color: var(--accent);
+}
+
+.auth-submit {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.auth-submit:hover {
+  background: #A83A4E;
+}
+
+.auth-error {
+  color: #B5555E;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.auth-toggle {
+  margin-top: 18px;
+  font-size: 0.85rem;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* ---- User list ---- */
+.app-layout {
+  display: flex;
+  height: 100vh;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.user-list {
+  width: 220px;
+  border-right: 1px solid var(--line);
+  padding: 20px 16px;
+}
+
+.user-list h3 {
+  font-family: 'Fraunces', serif;
+  margin-top: 0;
+}
+
+.user-list-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.user-list-item:hover {
+  background: var(--accent-soft);
+}
+
+.empty-state {
+  font-size: 0.8rem;
+  color: #8A7D85;
+}
+
+.no-chat-selected {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8A7D85;
+  font-family: 'Fraunces', serif;
+  font-size: 1.2rem;
+}
