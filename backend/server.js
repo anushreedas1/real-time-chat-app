@@ -3,25 +3,26 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const Message = require('./models/Message');
+const User = require('./models/User');
 const authRoutes = require('./routes/authRoutes');
-const jwt = require('jsonwebtoken');
-const verifyToken = require('./middleware/verifyToken');
 const userRoutes = require('./routes/userRoutes');
+const verifyToken = require('./middleware/verifyToken');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use('/api/users', userRoutes);
 
-// Test route
 app.get('/', (req, res) => {
   res.send('Server is running!');
 });
 
-// Fetch chat history
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+
 app.get('/messages/:conversationId', verifyToken, async (req, res) => {
   try {
     const messages = await Message.find({ conversationId: req.params.conversationId })
@@ -33,19 +34,14 @@ app.get('/messages/:conversationId', verifyToken, async (req, res) => {
   }
 });
 
-app.use('/api/auth', authRoutes);
-
-// Create HTTP server and wrap Express in it
 const server = http.createServer(app);
 
-// Attach Socket.IO to that server
 const io = new Server(server, {
   cors: {
-    origin: '*', // we'll lock this down later
+    origin: '*',
   },
 });
 
-// Middleware: runs before every socket connection is accepted
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
 
@@ -55,16 +51,14 @@ io.use((socket, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    socket.user = decoded; // attach user info to this socket for later use
+    socket.user = decoded;
     next();
   } catch (err) {
     next(new Error('Authentication error: invalid token'));
   }
 });
 
-// Listen for new client connections
-// Tracks which usernames are currently connected (a user can have multiple tabs/sockets open)
-const onlineUsers = new Map(); // username -> count of active connections
+const onlineUsers = new Map();
 
 function broadcastOnlineUsers() {
   io.emit('online users', Array.from(onlineUsers.keys()));
@@ -76,20 +70,18 @@ io.on('connection', (socket) => {
 
   socket.join(username);
 
-  // Mark this user online
   onlineUsers.set(username, (onlineUsers.get(username) || 0) + 1);
   broadcastOnlineUsers();
 
   socket.on('join conversation', async (conversationId) => {
     socket.join(conversationId);
 
-    // Mark the OTHER person's messages in this conversation as seen
     try {
-      await Message.updateMany(
+      const result = await Message.updateMany(
         { conversationId, sender: { $ne: username }, seen: false },
         { $set: { seen: true } }
       );
-      // Tell everyone in this conversation that messages were seen
+      console.log(`Marked ${result.modifiedCount} messages as seen in ${conversationId} by ${username}`);
       io.to(conversationId).emit('messages seen', { conversationId, seenBy: username });
     } catch (err) {
       console.error('Error marking messages seen:', err);
@@ -108,6 +100,13 @@ io.on('connection', (socket) => {
       io.to(data.conversationId).emit('chat message', newMessage);
 
       if (data.recipient) {
+        // Auto-add the sender to the recipient's contacts, so this chat
+        // shows up in their sidebar even if they never manually added the sender
+        await User.updateOne(
+          { username: data.recipient, contacts: { $ne: username } },
+          { $addToSet: { contacts: username } }
+        );
+
         io.to(data.recipient).emit('new message notification', {
           conversationId: data.conversationId,
           sender: username,
@@ -128,46 +127,6 @@ io.on('connection', (socket) => {
       onlineUsers.set(username, count - 1);
     }
     broadcastOnlineUsers();
-  });
-});
-
-io.on('connection', (socket) => {
-  console.log('A user connected:', socket.user.username);
-
-  // Join a personal room named after this user — lets us notify them
-  // about new messages even in conversations they don't currently have open
-  socket.join(socket.user.username);
-
-  socket.on('join conversation', (conversationId) => {
-    socket.join(conversationId);
-  });
-
-  socket.on('chat message', async (data) => {
-    try {
-      const newMessage = new Message({
-        text: data.text,
-        sender: socket.user.username,
-        conversationId: data.conversationId,
-      });
-      await newMessage.save();
-
-      io.to(data.conversationId).emit('chat message', newMessage);
-
-      // Notify the recipient's personal room, so their sidebar can show an unread dot
-      // even if they don't have this conversation open right now
-      if (data.recipient) {
-        io.to(data.recipient).emit('new message notification', {
-          conversationId: data.conversationId,
-          sender: socket.user.username,
-        });
-      }
-    } catch (err) {
-      console.error('Error saving message:', err);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.user.username);
   });
 });
 

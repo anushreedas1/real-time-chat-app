@@ -15,6 +15,10 @@ function formatTime(dateString) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function getInitial(name) {
+  return name ? name.charAt(0).toUpperCase() : '?';
+}
+
 function App() {
   const [username, setUsername] = useState(localStorage.getItem('username') || null);
   const [socket, setSocket] = useState(null);
@@ -44,7 +48,10 @@ function App() {
     if (!socket) return;
 
     const handler = (msg) => {
-      setMessages((prev) => [...prev, msg]);
+      setMessages((prev) => {
+        if (prev.some((m) => m._id === msg._id)) return prev;
+        return [...prev, msg];
+      });
     };
 
     socket.on('chat message', handler);
@@ -145,20 +152,27 @@ function App() {
         activeChatUser={activeChatUser}
         unreadUsers={unreadUsers}
         onlineUsers={onlineUsers}
+        socket={socket}
       />
 
       <div className="app-shell">
         <div className="chat-header">
-          <div>
-            <h1>{activeChatUser || 'Chatter'}</h1>
-            <p className={`status-line ${!isConnected ? 'offline' : ''}`}>
-              {activeChatUser
-                ? (onlineUsers.has(activeChatUser) ? '● Online' : '○ Offline')
-                : (isConnected ? '● Connected' : '● Disconnected')}
-            </p>
+          <div className="chat-header-left">
+            {activeChatUser && (
+              <div className="avatar-circle">{getInitial(activeChatUser)}</div>
+            )}
+            <div>
+              <h1>{activeChatUser || 'Chatter'}</h1>
+              <p className={`status-line ${!isConnected ? 'offline' : ''}`}>
+                {activeChatUser
+                  ? (onlineUsers.has(activeChatUser) ? '● Online' : '○ Offline')
+                  : (isConnected ? '● Connected' : '● Disconnected')}
+              </p>
+            </div>
           </div>
           <div className="user-block">
-            <span>{username}</span>
+            <div className="avatar-circle avatar-circle-self">{getInitial(username)}</div>
+            <span className="current-username">{username}</span>
             <button className="logout-btn" onClick={handleLogout}>Log out</button>
           </div>
         </div>
