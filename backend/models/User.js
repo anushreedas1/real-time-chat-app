@@ -12,8 +12,12 @@ const userSchema = new mongoose.Schema({
     required: true,
   },
   contacts: {
-    type: [String], // list of usernames this user has added
+    type: [String],
     default: [],
+  },
+  profilePicture: {
+    type: String,
+    default: '',
   },
   createdAt: {
     type: Date,

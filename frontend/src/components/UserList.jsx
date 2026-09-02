@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import Avatar from './Avatar';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-function UserList({ onSelectUser, activeChatUser, unreadUsers, onlineUsers, socket }) {
+function UserList({ onSelectUser, activeChatUser, onlineUsers, socket }) {
   const [contacts, setContacts] = useState([]);
   const [newContactName, setNewContactName] = useState('');
   const [addError, setAddError] = useState('');
@@ -28,18 +29,31 @@ function UserList({ onSelectUser, activeChatUser, unreadUsers, onlineUsers, sock
     fetchContacts();
   }, []);
 
-  // Refresh the contact list whenever a new message notification comes in —
-  // this makes a brand-new sender appear in the sidebar without a page refresh
   useEffect(() => {
     if (!socket) return;
 
-    const handler = () => {
-      fetchContacts();
+    const handler = ({ sender }) => {
+      setContacts((prev) => {
+        const exists = prev.some((c) => c.username === sender);
+        if (!exists) {
+          fetchContacts();
+          return prev;
+        }
+        return prev.map((c) => (c.username === sender ? { ...c, hasUnread: true } : c));
+      });
     };
 
     socket.on('new message notification', handler);
     return () => socket.off('new message notification', handler);
   }, [socket]);
+
+  // This just updates state and calls the parent's handler — no JSX inside here
+  const handleSelect = (otherUser, otherUserPic) => {
+    setContacts((prev) =>
+      prev.map((c) => (c.username === otherUser ? { ...c, hasUnread: false } : c))
+    );
+    onSelectUser(otherUser, otherUserPic);
+  };
 
   const handleAddContact = async (e) => {
     e.preventDefault();
@@ -94,15 +108,18 @@ function UserList({ onSelectUser, activeChatUser, unreadUsers, onlineUsers, sock
         <div
           key={u._id}
           className={`user-list-item ${activeChatUser === u.username ? 'active' : ''}`}
-          onClick={() => onSelectUser(u.username)}
+          onClick={() => handleSelect(u.username, u.profilePicture)}
         >
-          <div className="user-info">
-            <span className="user-name">{u.username}</span>
-            <span className={`online-label ${onlineUsers.has(u.username) ? 'online' : ''}`}>
-              {onlineUsers.has(u.username) ? 'Online' : 'Offline'}
-            </span>
+          <div className="user-info-row">
+            <Avatar name={u.username} src={u.profilePicture} />
+            <div className="user-info">
+              <span className="user-name">{u.username}</span>
+              <span className={`online-label ${onlineUsers.has(u.username) ? 'online' : ''}`}>
+                {onlineUsers.has(u.username) ? 'Online' : 'Offline'}
+              </span>
+            </div>
           </div>
-          {unreadUsers.has(u.username) && <span className="unread-dot"></span>}
+          {u.hasUnread && <span className="unread-dot"></span>}
         </div>
       ))}
     </div>
