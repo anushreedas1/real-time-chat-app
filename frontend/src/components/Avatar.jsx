@@ -3,7 +3,10 @@ function getInitial(name) {
 }
 
 function Avatar({ name, src, size = 'normal', self = false, editable = false, onEditClick }) {
-  const sizeClass = size === 'large' ? 'avatar-circle-large' : (self ? 'avatar-circle-self' : '');
+  let sizeClass = '';
+  if (size === 'large') sizeClass = 'avatar-circle-large';
+  else if (size === 'small') sizeClass = 'avatar-circle-small';
+  else if (self) sizeClass = 'avatar-circle-self';
 
   return (
     <div className="avatar-wrapper">
@@ -24,7 +27,7 @@ function Avatar({ name, src, size = 'normal', self = false, editable = false, on
           type="button"
           className={`avatar-edit-badge ${src ? 'has-pic' : 'no-pic'}`}
           onClick={onEditClick}
-          aria-label="Edit profile picture"
+          aria-label="Edit picture"
         >
           {src ? '✎' : '+'}
         </button>

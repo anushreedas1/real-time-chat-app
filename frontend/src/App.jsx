@@ -3,34 +3,45 @@ import { io } from 'socket.io-client';
 import Auth from './components/Auth';
 import UserList from './components/UserList';
 import Avatar from './components/Avatar';
+import GroupInfoModal from './components/GroupInfoModal';
 import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-function getConversationId(userA, userB) {
-  return [userA, userB].sort().join('_');
-}
-
 function formatTime(dateString) {
   const date = new Date(dateString);
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function getSeenInfo(msg, conversation) {
+  const seenBy = msg.seenBy || [];
+  const othersCount = conversation ? conversation.members.length - 1 : 0;
+
+  if (othersCount <= 0 || seenBy.length === 0) {
+    return { label: 'Sent', seen: false };
+  }
+  if (seenBy.length >= othersCount) {
+    return { label: 'Seen', seen: true };
+  }
+  return { label: `Seen by ${seenBy.length}`, seen: true };
 }
 
 function App() {
   const [username, setUsername] = useState(localStorage.getItem('username') || null);
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [activeChatUser, setActiveChatUser] = useState(null);
-  const [activeChatUserPic, setActiveChatUserPic] = useState('');
+  const [activeConversation, setActiveConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [myProfilePicture, setMyProfilePicture] = useState('');
   const [uploading, setUploading] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  const [conversationsRefreshTrigger, setConversationsRefreshTrigger] = useState(0);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -97,29 +108,33 @@ function App() {
   useEffect(() => {
     if (!socket) return;
 
-    const seenHandler = ({ conversationId }) => {
-      const activeId = activeChatUser ? getConversationId(username, activeChatUser) : null;
-      if (conversationId === activeId) {
-        setMessages((prev) => prev.map((m) => (m.sender === username ? { ...m, seen: true } : m)));
+    const seenHandler = ({ conversationId, seenBy }) => {
+      if (activeConversation && conversationId === activeConversation._id) {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.sender === username && !(m.seenBy || []).includes(seenBy)) {
+              return { ...m, seenBy: [...(m.seenBy || []), seenBy] };
+            }
+            return m;
+          })
+        );
       }
     };
 
     socket.on('messages seen', seenHandler);
     return () => socket.off('messages seen', seenHandler);
-  }, [socket, activeChatUser, username]);
+  }, [socket, activeConversation, username]);
 
-  const handleSelectUser = (otherUser, otherUserPic) => {
-    setActiveChatUser(otherUser);
-    setActiveChatUserPic(otherUserPic || '');
+  const handleSelectConversation = (conv) => {
+    setActiveConversation(conv);
     setMessages([]);
-
-    const conversationId = getConversationId(username, otherUser);
+    setShowGroupInfo(false);
 
     if (socket) {
-      socket.emit('join conversation', conversationId);
+      socket.emit('join conversation', conv._id);
     }
 
-    fetch(`${API_URL}/messages/${conversationId}`, {
+    fetch(`${API_URL}/messages/${conv._id}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
     })
       .then((res) => res.json())
@@ -128,13 +143,11 @@ function App() {
   };
 
   const sendMessage = () => {
-    if (input.trim() === '' || !activeChatUser || !socket) return;
+    if (input.trim() === '' || !activeConversation || !socket) return;
 
-    const conversationId = getConversationId(username, activeChatUser);
     socket.emit('chat message', {
       text: input,
-      conversationId,
-      recipient: activeChatUser,
+      conversationId: activeConversation._id,
     });
     setInput('');
   };
@@ -144,7 +157,7 @@ function App() {
     localStorage.removeItem('username');
     setUsername(null);
     setSocket(null);
-    setActiveChatUser(null);
+    setActiveConversation(null);
   };
 
   const handleUploadClick = () => {
@@ -206,6 +219,30 @@ function App() {
     }
   };
 
+  const handleGroupUpdated = (updatedConv) => {
+    setActiveConversation((prev) => ({
+      ...prev,
+      name: updatedConv.name,
+      profilePicture: updatedConv.groupPicture,
+      about: updatedConv.about,
+      members: updatedConv.members,
+    }));
+  };
+
+  const handleConversationRemoved = (conversationId) => {
+    if (activeConversation && activeConversation._id === conversationId) {
+      setActiveConversation(null);
+      setMessages([]);
+      setShowGroupInfo(false);
+    }
+  };
+
+  const handleLeftGroup = (conversationId) => {
+    setShowGroupInfo(false);
+    handleConversationRemoved(conversationId);
+    setConversationsRefreshTrigger((prev) => prev + 1);
+  };
+
   if (!username) {
     return <Auth onLogin={(name) => setUsername(name)} />;
   }
@@ -213,23 +250,31 @@ function App() {
   return (
     <div className="app-layout">
       <UserList
-        onSelectUser={handleSelectUser}
-        activeChatUser={activeChatUser}
+        onSelectConversation={handleSelectConversation}
+        activeConversationId={activeConversation?._id}
         onlineUsers={onlineUsers}
         socket={socket}
+        username={username}
+        onConversationRemoved={handleConversationRemoved}
+        refreshTrigger={conversationsRefreshTrigger}
       />
 
       <div className="app-shell">
         <div className="chat-header">
-          <div className="chat-header-left">
-            {activeChatUser && (
-              <Avatar name={activeChatUser} src={activeChatUserPic} />
+          <div
+            className={`chat-header-left ${activeConversation?.isGroup ? 'clickable' : ''}`}
+            onClick={() => activeConversation?.isGroup && setShowGroupInfo(true)}
+          >
+            {activeConversation && (
+              <Avatar name={activeConversation.name} src={activeConversation.profilePicture} />
             )}
             <div>
-              <h1>{activeChatUser || 'Chatter'}</h1>
+              <h1>{activeConversation ? activeConversation.name : 'Chatter'}</h1>
               <p className={`status-line ${!isConnected ? 'offline' : ''}`}>
-                {activeChatUser
-                  ? (onlineUsers.has(activeChatUser) ? '● Online' : '○ Offline')
+                {activeConversation
+                  ? (activeConversation.isGroup
+                      ? `${activeConversation.members.length} members`
+                      : (onlineUsers.has(activeConversation.name) ? '● Online' : '○ Offline'))
                   : (isConnected ? '● Connected' : '● Disconnected')}
               </p>
             </div>
@@ -275,25 +320,28 @@ function App() {
           </div>
         </div>
 
-        {!activeChatUser ? (
+        {!activeConversation ? (
           <div className="no-chat-selected">Select a conversation to start chatting</div>
         ) : (
           <>
             <div className="messages-area">
-              {messages.map((msg) => (
-                <div key={msg._id} className={`bubble-row ${msg.sender === username ? 'mine' : 'theirs'}`}>
-                  {msg.sender !== username && <span className="sender-label">{msg.sender}</span>}
-                  <div className="bubble">{msg.text}</div>
-                  <span className="msg-time">
-                    {formatTime(msg.createdAt)}
-                    {msg.sender === username && (
-                      <span className={`seen-mark ${msg.seen ? 'seen' : ''}`}>
-                        {msg.seen ? ' ✓✓ Seen' : ' ✓ Sent'}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              ))}
+              {messages.map((msg) => {
+                const seenInfo = getSeenInfo(msg, activeConversation);
+                return (
+                  <div key={msg._id} className={`bubble-row ${msg.sender === username ? 'mine' : 'theirs'}`}>
+                    {msg.sender !== username && <span className="sender-label">{msg.sender}</span>}
+                    <div className="bubble">{msg.text}</div>
+                    <span className="msg-time">
+                      {formatTime(msg.createdAt)}
+                      {msg.sender === username && (
+                        <span className={`seen-mark ${seenInfo.seen ? 'seen' : ''}`}>
+                          {' '}{seenInfo.seen ? '✓✓' : '✓'} {seenInfo.label}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="input-row">
@@ -308,6 +356,16 @@ function App() {
           </>
         )}
       </div>
+
+      {showGroupInfo && activeConversation && (
+        <GroupInfoModal
+          conversationId={activeConversation._id}
+          currentUsername={username}
+          onClose={() => setShowGroupInfo(false)}
+          onUpdated={handleGroupUpdated}
+          onLeftGroup={handleLeftGroup}
+        />
+      )}
     </div>
   );
 }

@@ -7,9 +7,10 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const Message = require('./models/Message');
-const User = require('./models/User');
+const Conversation = require('./models/Conversation');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
+const conversationRoutes = require('./routes/conversationRoutes');
 const verifyToken = require('./middleware/verifyToken');
 
 const app = express();
@@ -22,6 +23,7 @@ app.get('/', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/conversations', conversationRoutes);
 
 app.get('/messages/:conversationId', verifyToken, async (req, res) => {
   try {
@@ -78,8 +80,8 @@ io.on('connection', (socket) => {
 
     try {
       const result = await Message.updateMany(
-        { conversationId, sender: { $ne: username }, seen: false },
-        { $set: { seen: true } }
+        { conversationId, sender: { $ne: username }, seenBy: { $ne: username } },
+        { $addToSet: { seenBy: username } }
       );
       console.log(`Marked ${result.modifiedCount} messages as seen in ${conversationId} by ${username}`);
       io.to(conversationId).emit('messages seen', { conversationId, seenBy: username });
@@ -99,18 +101,21 @@ io.on('connection', (socket) => {
 
       io.to(data.conversationId).emit('chat message', newMessage);
 
-      if (data.recipient) {
-        // Auto-add the sender to the recipient's contacts, so this chat
-        // shows up in their sidebar even if they never manually added the sender
-        await User.updateOne(
-          { username: data.recipient, contacts: { $ne: username } },
-          { $addToSet: { contacts: username } }
-        );
+      const conversation = await Conversation.findById(data.conversationId);
+      if (conversation) {
+        if (conversation.hiddenFor.length > 0) {
+          conversation.hiddenFor = [];
+          await conversation.save();
+        }
 
-        io.to(data.recipient).emit('new message notification', {
-          conversationId: data.conversationId,
-          sender: username,
-        });
+        conversation.members
+          .filter((m) => m !== username)
+          .forEach((member) => {
+            io.to(member).emit('new message notification', {
+              conversationId: data.conversationId,
+              sender: username,
+            });
+          });
       }
     } catch (err) {
       console.error('Error saving message:', err);

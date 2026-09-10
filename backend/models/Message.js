@@ -13,9 +13,9 @@ const messageSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  seen: {
-    type: Boolean,
-    default: false,
+  seenBy: {
+    type: [String], // usernames who have seen this message
+    default: [],
   },
   createdAt: {
     type: Date,
