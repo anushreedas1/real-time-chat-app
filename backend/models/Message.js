@@ -3,7 +3,17 @@ const mongoose = require('mongoose');
 const messageSchema = new mongoose.Schema({
   text: {
     type: String,
-    required: true,
+    default: '',
+    trim: true,
+  },
+  imageUrl: {
+    type: String,
+    default: '',
+  },
+  type: {
+    type: String,
+    enum: ['text', 'image'],
+    default: 'text',
   },
   sender: {
     type: String,
@@ -15,6 +25,10 @@ const messageSchema = new mongoose.Schema({
   },
   seenBy: {
     type: [String], // usernames who have seen this message
+    default: [],
+  },
+  deletedFor: {
+    type: [String], // usernames who removed this message from their own chat
     default: [],
   },
   createdAt: {

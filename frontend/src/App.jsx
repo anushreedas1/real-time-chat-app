@@ -16,8 +16,9 @@ function formatTime(dateString) {
 }
 
 function getSeenInfo(msg, conversation) {
-  const seenBy = msg.seenBy || [];
-  const othersCount = conversation ? conversation.members.length - 1 : 0;
+  const members = conversation?.members || [];
+  const seenBy = [...new Set(msg.seenBy || [])].filter((name) => name !== msg.sender && members.includes(name));
+  const othersCount = Math.max(0, members.length - 1);
 
   if (othersCount <= 0 || seenBy.length === 0) {
     return { label: 'Sent', seen: false };
@@ -25,7 +26,7 @@ function getSeenInfo(msg, conversation) {
   if (seenBy.length >= othersCount) {
     return { label: 'Seen', seen: true };
   }
-  return { label: `Seen by ${seenBy.length}`, seen: true };
+  return { label: `Seen by ${seenBy.length} of ${othersCount}`, seen: false, partial: true };
 }
 
 function App() {
@@ -40,9 +41,25 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
+  const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [capturedPhotoUrl, setCapturedPhotoUrl] = useState('');
+  const [previewProfile, setPreviewProfile] = useState(null);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [conversationsRefreshTrigger, setConversationsRefreshTrigger] = useState(0);
   const fileInputRef = useRef(null);
+  const chatPhotoInputRef = useRef(null);
+  const cameraPhotoInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const messagesEndRef = useRef(null);
+
+  const emojis = ['😀', '😂', '🥰', '😍', '😎', '😭', '😡', '👍', '👎', '👏', '🙏', '🎉', '❤️', '🔥', '✨', '🤔', '✅', '💯'];
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -97,6 +114,32 @@ function App() {
   useEffect(() => {
     if (!socket) return;
 
+    const updateHandler = (updatedMessage) => {
+      setMessages((prev) => prev.map((message) => (
+        message._id === updatedMessage._id ? updatedMessage : message
+      )));
+    };
+    const deleteHandler = ({ messageId }) => {
+      setMessages((prev) => prev.filter((message) => message._id !== messageId));
+      setEditingMessageId((current) => (current === messageId ? null : current));
+    };
+    const deleteForMeHandler = ({ messageId }) => {
+      setMessages((prev) => prev.filter((message) => message._id !== messageId));
+    };
+
+    socket.on('message updated', updateHandler);
+    socket.on('message deleted', deleteHandler);
+    socket.on('message deleted for me', deleteForMeHandler);
+    return () => {
+      socket.off('message updated', updateHandler);
+      socket.off('message deleted', deleteHandler);
+      socket.off('message deleted for me', deleteForMeHandler);
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+
     const onlineHandler = (usersList) => {
       setOnlineUsers(new Set(usersList));
     };
@@ -125,6 +168,12 @@ function App() {
     return () => socket.off('messages seen', seenHandler);
   }, [socket, activeConversation, username]);
 
+  useEffect(() => {
+    if (activeConversation && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [activeConversation, messages]);
+
   const handleSelectConversation = (conv) => {
     setActiveConversation(conv);
     setMessages([]);
@@ -151,6 +200,153 @@ function App() {
     });
     setInput('');
   };
+
+  const sendImage = (imageUrl) => {
+    if (!imageUrl || !activeConversation || !socket) return;
+    socket.emit('chat message', {
+      text: '',
+      imageUrl,
+      conversationId: activeConversation._id,
+    });
+  };
+
+  const uploadChatImage = async (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+      alert('Photo sending is not configured yet. Add the Cloudinary environment variables to the frontend.');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: 'POST', body: formData }
+      );
+      const data = await response.json();
+      if (!data.secure_url) throw new Error(data.error?.message || 'Upload failed');
+      sendImage(data.secure_url);
+    } catch (err) {
+      console.error('Error uploading chat image:', err);
+      alert('Could not send the photo. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleChatPhotoSelected = async (event) => {
+    await uploadChatImage(event.target.files?.[0]);
+    event.target.value = '';
+  };
+
+  const handleCameraPhotoSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) showCapturedPhoto(file);
+  };
+
+  const clearCapturedPhoto = () => {
+    if (capturedPhotoUrl) URL.revokeObjectURL(capturedPhotoUrl);
+    setCapturedPhoto(null);
+    setCapturedPhotoUrl('');
+  };
+
+  const showCapturedPhoto = (file) => {
+    if (capturedPhotoUrl) URL.revokeObjectURL(capturedPhotoUrl);
+    setCapturedPhoto(file);
+    setCapturedPhotoUrl(URL.createObjectURL(file));
+    setCameraError('');
+    setShowCamera(true);
+  };
+
+  const stopCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    clearCapturedPhoto();
+    setShowCamera(false);
+  };
+
+  const openCamera = async () => {
+    setShowEmojiPicker(false);
+    setCameraError('');
+    clearCapturedPhoto();
+    setShowCamera(true);
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Camera preview is not supported by this browser');
+      }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+      cameraStreamRef.current = stream;
+      window.setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+      }, 0);
+    } catch (err) {
+      console.error('Camera unavailable:', err);
+      setCameraError('Live camera preview is unavailable. Use the device camera button below, or allow camera access and open this site over HTTPS.');
+    }
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video?.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob(async (blob) => {
+      if (blob) {
+        showCapturedPhoto(new File([blob], 'camera-photo.jpg', { type: 'image/jpeg' }));
+        cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+        cameraStreamRef.current = null;
+      }
+    }, 'image/jpeg', 0.9);
+  };
+
+  const sendCapturedPhoto = async () => {
+    if (!capturedPhoto) return;
+    await uploadChatImage(capturedPhoto);
+    stopCamera();
+  };
+
+  const startEditing = (message) => {
+    setEditingMessageId(message._id);
+    setEditingText(message.text);
+  };
+
+  const saveEdit = (messageId) => {
+    const text = editingText.trim();
+    if (!text || !socket) return;
+    socket.emit('edit message', { messageId, text });
+    setEditingMessageId(null);
+  };
+
+  const deleteMessage = (messageId) => socket?.emit('delete message', { messageId });
+
+  const deleteMessageForMe = (messageId) => socket?.emit('delete message for me', { messageId });
+
+  const removeImage = (message) => {
+    if (!socket) return;
+    if (!message.text) {
+      deleteMessage(message._id);
+      return;
+    }
+    socket.emit('remove message image', { messageId: message._id });
+  };
+
+  useEffect(() => () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -266,7 +462,14 @@ function App() {
             onClick={() => activeConversation?.isGroup && setShowGroupInfo(true)}
           >
             {activeConversation && (
-              <Avatar name={activeConversation.name} src={activeConversation.profilePicture} />
+              <Avatar
+                name={activeConversation.name}
+                src={activeConversation.profilePicture}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPreviewProfile({ name: activeConversation.name, src: activeConversation.profilePicture });
+                }}
+              />
             )}
             <div>
               <h1>{activeConversation ? activeConversation.name : 'Chatter'}</h1>
@@ -299,12 +502,14 @@ function App() {
                 self
                 editable
                 onEditClick={() => setShowProfileMenu((prev) => !prev)}
+                onClick={() => myProfilePicture && setPreviewProfile({ name: username, src: myProfilePicture })}
               />
 
               {showProfileMenu && (
                 <div className="profile-menu">
                   {myProfilePicture ? (
                     <>
+                      <button onClick={() => { setShowProfileMenu(false); setPreviewProfile({ name: username, src: myProfilePicture }); }}>Preview photo</button>
                       <button onClick={handleUploadClick}>Change photo</button>
                       <button className="danger" onClick={handleRemovePicture}>Remove photo</button>
                     </>
@@ -327,10 +532,23 @@ function App() {
             <div className="messages-area">
               {messages.map((msg) => {
                 const seenInfo = getSeenInfo(msg, activeConversation);
+                const isEditing = editingMessageId === msg._id;
+                const isMine = msg.sender === username;
                 return (
                   <div key={msg._id} className={`bubble-row ${msg.sender === username ? 'mine' : 'theirs'}`}>
                     {msg.sender !== username && <span className="sender-label">{msg.sender}</span>}
-                    <div className="bubble">{msg.text}</div>
+                    {isEditing ? (
+                      <div className="message-edit-form">
+                        <input value={editingText} onChange={(event) => setEditingText(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && saveEdit(msg._id)} autoFocus />
+                        <button type="button" onClick={() => saveEdit(msg._id)}>Save</button>
+                        <button type="button" onClick={() => setEditingMessageId(null)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div className={`bubble ${msg.imageUrl ? 'image-bubble' : ''}`}>
+                        {msg.imageUrl && <img src={msg.imageUrl} alt="Shared in chat" className="chat-image" />}
+                        {msg.text && <span>{msg.text}</span>}
+                      </div>
+                    )}
                     <span className="msg-time">
                       {formatTime(msg.createdAt)}
                       {msg.sender === username && (
@@ -339,19 +557,48 @@ function App() {
                         </span>
                       )}
                     </span>
+                    {!isEditing && (
+                      <div className="message-menu-wrap">
+                        <button className="message-menu-toggle" type="button" aria-label="Message actions" aria-expanded={openMessageMenuId === msg._id} onClick={() => setOpenMessageMenuId((current) => current === msg._id ? null : msg._id)}>⌄</button>
+                        {openMessageMenuId === msg._id && (
+                          <div className="message-actions">
+                            {isMine && msg.text && <button type="button" onClick={() => { startEditing(msg); setOpenMessageMenuId(null); }}>Edit</button>}
+                            {isMine && msg.imageUrl && <button type="button" onClick={() => { removeImage(msg); setOpenMessageMenuId(null); }}>{msg.text ? 'Remove photo' : 'Delete photo'}</button>}
+                            {isMine && <button type="button" onClick={() => { deleteMessageForMe(msg._id); setOpenMessageMenuId(null); }}>Delete for me</button>}
+                            {isMine && <button type="button" onClick={() => { deleteMessage(msg._id); setOpenMessageMenuId(null); }}>Delete for everyone</button>}
+                            {!isMine && <button type="button" onClick={() => { deleteMessageForMe(msg._id); setOpenMessageMenuId(null); }}>Delete for me</button>}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="input-row">
+              <div className="composer-tools">
+                <button className="composer-icon-btn" type="button" aria-label="Add emoji" onClick={() => setShowEmojiPicker((prev) => !prev)}>😊</button>
+                {showEmojiPicker && (
+                  <div className="emoji-picker" role="dialog" aria-label="Choose an emoji">
+                    {emojis.map((emoji) => (
+                      <button key={emoji} type="button" onClick={() => { setInput((prev) => `${prev}${emoji}`); setShowEmojiPicker(false); }}>{emoji}</button>
+                    ))}
+                  </div>
+                )}
+                <input ref={chatPhotoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleChatPhotoSelected} />
+                <input ref={cameraPhotoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleCameraPhotoSelected} />
+                <button className="composer-icon-btn" type="button" aria-label="Choose photo from device" onClick={() => chatPhotoInputRef.current?.click()}>🖼️</button>
+                <button className="composer-icon-btn" type="button" aria-label="Take a photo" onClick={openCamera}>📷</button>
+              </div>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                 placeholder="Type a message..."
               />
-              <button className="send-btn" onClick={sendMessage}>Send</button>
+              <button className="send-btn" onClick={sendMessage} disabled={uploading}>{uploading ? 'Sending...' : 'Send'}</button>
             </div>
           </>
         )}
@@ -365,6 +612,45 @@ function App() {
           onUpdated={handleGroupUpdated}
           onLeftGroup={handleLeftGroup}
         />
+      )}
+
+      {showCamera && (
+        <div className="modal-overlay" onClick={stopCamera}>
+          <div className="camera-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={stopCamera} aria-label="Close camera">✕</button>
+            <h2>Take a photo</h2>
+            {capturedPhotoUrl ? (
+              <img src={capturedPhotoUrl} className="camera-preview" alt="Photo ready to send" />
+            ) : (cameraError ? <p className="camera-error">{cameraError}</p> : <video ref={videoRef} className="camera-preview" playsInline muted />)}
+            <div className="camera-actions">
+              {capturedPhoto ? (
+                <>
+                  <button className="camera-cancel-btn" onClick={openCamera} disabled={uploading}>Retake</button>
+                  <button className="send-btn" onClick={sendCapturedPhoto} disabled={uploading}>{uploading ? 'Sending...' : 'Send photo'}</button>
+                </>
+              ) : cameraError ? (
+                <button className="send-btn" onClick={() => cameraPhotoInputRef.current?.click()} disabled={uploading}>Use device camera</button>
+              ) : (
+                <button className="send-btn" onClick={capturePhoto} disabled={uploading}>Capture & send</button>
+              )}
+              <button className="camera-cancel-btn" onClick={stopCamera}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewProfile && (
+        <div className="modal-overlay" onClick={() => setPreviewProfile(null)}>
+          <div className="profile-preview-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setPreviewProfile(null)} aria-label="Close profile preview">✕</button>
+            <h2>{previewProfile.name}</h2>
+            {previewProfile.src ? (
+              <img src={previewProfile.src} alt={`${previewProfile.name}'s profile`} className="profile-preview-image" />
+            ) : (
+              <div className="profile-preview-placeholder">{previewProfile.name.charAt(0).toUpperCase()}</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -15,7 +15,7 @@ router.get('/', verifyToken, async (req, res) => {
     const conversations = await Conversation.find({
       members: username,
       hiddenFor: { $ne: username },
-    }).sort({ createdAt: 1 });
+    }).sort({ lastMessageAt: -1, createdAt: -1 });
 
     const result = await Promise.all(
       conversations.map(async (conv) => {

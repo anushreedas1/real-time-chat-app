@@ -40,18 +40,21 @@ function UserList({ onSelectConversation, activeConversationId, onlineUsers, soc
 
     const handler = ({ conversationId }) => {
       setConversations((prev) => {
-        const exists = prev.some((c) => c._id === conversationId);
-        if (!exists) {
+        const conversation = prev.find((c) => c._id === conversationId);
+        if (!conversation) {
           fetchConversations();
           return prev;
         }
-        return prev.map((c) => (c._id === conversationId ? { ...c, hasUnread: true } : c));
+        return [
+          { ...conversation, hasUnread: activeConversationId !== conversationId },
+          ...prev.filter((c) => c._id !== conversationId),
+        ];
       });
     };
 
     socket.on('new message notification', handler);
     return () => socket.off('new message notification', handler);
-  }, [socket]);
+  }, [socket, activeConversationId]);
 
   const handleSelect = (conv) => {
     setConversations((prev) =>
