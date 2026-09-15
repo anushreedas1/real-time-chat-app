@@ -1,6 +1,6 @@
 # 💬 Chatter — Real-Time Chat Application
 
-A full-stack, real-time private messaging app built with React, Node.js, Socket.IO, and MongoDB. Sign up, pick someone to talk to, and chat instantly — messages sync live and persist across sessions.
+A full-stack, real-time chat app built with React, Node.js, Socket.IO, and MongoDB. Sign up, start a direct or group conversation, and share messages and photos that sync live and persist across sessions.
 
 **🔗 Live app:** https://real-time-chat-app-mu-beryl.vercel.app/
 **📦 Repo:** https://github.com/anushreedas1/real-time-chat-app
@@ -27,8 +27,14 @@ A full-stack, real-time private messaging app built with React, Node.js, Socket.
 
 - 🔐 **Authentication** — signup/login with hashed passwords (bcrypt) and JWT sessions
 - ⚡ **Real-time messaging** — instant delivery via Socket.IO, no page refresh needed
-- 🔒 **Private conversations** — 1-on-1 chats scoped to dedicated Socket.IO rooms, so messages only reach the two people involved
+- 👥 **Direct and group chats** — start one-to-one chats or create groups with multiple members
 - 💾 **Persistent history** — every message is stored in MongoDB and reloads automatically
+- 🖼️ **Photo sharing** — upload an image from a device or capture one with the camera, preview it, then send
+- 😊 **Emoji picker** — add common emojis directly from the composer
+- ✏️ **Message controls** — edit sent text, delete messages for everyone, or remove any message from only your own view
+- 👁️ **Read receipts** — live sent/seen status, including per-member progress in group chats
+- 🧑 **Profile photos** — upload, remove, and preview your profile photo; preview a chat participant's photo from the header
+- 📬 **Recency-based chat list** — incoming conversations move to the top automatically
 - 🛡️ **Verified everywhere** — both REST endpoints and socket connections check a valid JWT before allowing any action; identity is never trusted from client input
 - 🎨 **Custom UI** — a designed interface (Fraunces/Inter typography, a raspberry-and-blush palette) rather than default component styling
 
@@ -57,7 +63,7 @@ A full-stack, real-time private messaging app built with React, Node.js, Socket.
                                                   └─────────────┘
 ```
 
-**How private conversations work:** each pair of users shares a deterministic `conversationId` — their two usernames, sorted alphabetically and joined (e.g. `annu_babe`). That same ID doubles as a Socket.IO room name, so routing a message to the right two people needs no extra database lookup — just `io.to(conversationId).emit(...)`.
+**How conversations work:** each direct chat or group is stored as a MongoDB `Conversation` document. Its MongoDB ID is also used as the Socket.IO room name, so messages and read-receipt events are delivered only to the members of that conversation.
 
 **How auth is enforced:** every REST request to a protected route, and every Socket.IO connection attempt, is checked against a JWT before anything else happens. The server never trusts a `sender` field the client sends — it always derives identity from the verified token.
 
@@ -66,8 +72,8 @@ A full-stack, real-time private messaging app built with React, Node.js, Socket.
 ```
 chat-app/
 ├── backend/
-│   ├── models/          # User.js, Message.js — Mongoose schemas
-│   ├── routes/          # authRoutes.js, userRoutes.js
+│   ├── models/          # User.js, Message.js, Conversation.js — Mongoose schemas
+│   ├── routes/          # Authentication, user, and conversation REST routes
 │   ├── middleware/       # verifyToken.js — JWT verification for REST routes
 │   └── server.js         # Express + Socket.IO entry point, socket auth middleware
 └── frontend/
@@ -115,13 +121,15 @@ npm install
 Create `frontend/.env`:
 ```
 VITE_API_URL=http://localhost:5000
+VITE_CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+VITE_CLOUDINARY_UPLOAD_PRESET=your_unsigned_upload_preset
 ```
 
 ```bash
 npm run dev
 ```
 
-Visit `http://localhost:5173` — you'll need two accounts (e.g. a second browser or an incognito window) to test private messaging.
+Visit `http://localhost:5173` — you'll need two accounts (for example, a second browser or incognito window) to test messaging. Camera preview requires a browser camera permission and either `localhost` or HTTPS.
 
 ## Environment Variables
 
@@ -131,6 +139,8 @@ Visit `http://localhost:5173` — you'll need two accounts (e.g. a second browse
 | `backend/.env` | `JWT_SECRET` | Secret used to sign and verify JWTs |
 | `backend/.env` | `PORT` | Port for the Express server (defaults to 5000) |
 | `frontend/.env` | `VITE_API_URL` | Base URL of the backend API/socket server |
+| `frontend/.env` | `VITE_CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name used for profile and chat image uploads |
+| `frontend/.env` | `VITE_CLOUDINARY_UPLOAD_PRESET` | Unsigned Cloudinary upload preset used for image uploads |
 
 ## What I Learned
 
@@ -139,15 +149,15 @@ This was my first full-stack project, built end-to-end as a fresh graduate. A fe
 - **Real-time vs. request/response** — how Socket.IO's persistent connection differs from typical REST calls, and when each is the right tool
 - **Never trust the client** — the backend must derive identity from a verified token, not from whatever a client claims about itself
 - **Deployment gotchas are real** — a JWT signed locally won't verify against a different `JWT_SECRET` in production; a whitelist that blocks your own database host will silently break everything; `.gitignore` encoding issues can leak `node_modules` into a commit if you're not careful
-- **Rooms as a modeling tool** — Socket.IO rooms turned out to be a clean way to scope private conversations without extra database queries on every message
+- **Rooms as a modeling tool** — Socket.IO rooms provide a clean way to scope direct and group conversations while still allowing events such as live read receipts
+- **Media needs a delivery service** — Cloudinary keeps image uploads out of the database while MongoDB stores the image URLs alongside message metadata
 
 ## Future Improvements
 
 - [ ] Typing indicators
-- [ ] Online/offline presence per user
-- [ ] Read receipts
-- [ ] Group chats (beyond 1-on-1)
-- [ ] Image/file sharing in messages
+- [ ] Push notifications
+- [ ] File sharing beyond images
+- [ ] Message reactions
 
 ---
 
