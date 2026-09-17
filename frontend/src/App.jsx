@@ -44,6 +44,7 @@ function App() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [cameraFacingMode, setCameraFacingMode] = useState('environment');
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingText, setEditingText] = useState('');
   const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
@@ -191,6 +192,13 @@ function App() {
       .catch((err) => console.error('Error fetching history:', err));
   };
 
+  const handleBackToConversations = () => {
+    setActiveConversation(null);
+    setMessages([]);
+    setShowGroupInfo(false);
+    setShowEmojiPicker(false);
+  };
+
   const sendMessage = () => {
     if (input.trim() === '' || !activeConversation || !socket) return;
 
@@ -269,18 +277,21 @@ function App() {
     setShowCamera(false);
   };
 
-  const openCamera = async () => {
+  const openCamera = async (facingMode = cameraFacingMode) => {
     setShowEmojiPicker(false);
     setCameraError('');
     clearCapturedPhoto();
     setShowCamera(true);
+    setCameraFacingMode(facingMode);
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('Camera preview is not supported by this browser');
       }
       let stream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facingMode } }, audio: false });
       } catch {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
@@ -295,6 +306,10 @@ function App() {
       console.error('Camera unavailable:', err);
       setCameraError('Live camera preview is unavailable. Use the device camera button below, or allow camera access and open this site over HTTPS.');
     }
+  };
+
+  const flipCamera = () => {
+    openCamera(cameraFacingMode === 'environment' ? 'user' : 'environment');
   };
 
   const capturePhoto = () => {
@@ -444,7 +459,7 @@ function App() {
   }
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${activeConversation ? 'chat-open' : 'chat-list-open'}`}>
       <UserList
         onSelectConversation={handleSelectConversation}
         activeConversationId={activeConversation?._id}
@@ -461,6 +476,19 @@ function App() {
             className={`chat-header-left ${activeConversation?.isGroup ? 'clickable' : ''}`}
             onClick={() => activeConversation?.isGroup && setShowGroupInfo(true)}
           >
+            {activeConversation && (
+              <button
+                className="mobile-back-btn"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleBackToConversations();
+                }}
+                aria-label="Back to conversations"
+              >
+                ←
+              </button>
+            )}
             {activeConversation && (
               <Avatar
                 name={activeConversation.name}
@@ -631,7 +659,10 @@ function App() {
               ) : cameraError ? (
                 <button className="send-btn" onClick={() => cameraPhotoInputRef.current?.click()} disabled={uploading}>Use device camera</button>
               ) : (
-                <button className="send-btn" onClick={capturePhoto} disabled={uploading}>Capture & send</button>
+                <>
+                  <button className="camera-cancel-btn" onClick={flipCamera} disabled={uploading}>Flip camera</button>
+                  <button className="send-btn" onClick={capturePhoto} disabled={uploading}>Capture & send</button>
+                </>
               )}
               <button className="camera-cancel-btn" onClick={stopCamera}>Cancel</button>
             </div>
